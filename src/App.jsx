@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Trash2,
   FileText,
+  Boxes,
 } from "lucide-react";
 
 /* =========================================================================
@@ -58,7 +59,8 @@ const CSS = `
 .ct-cred-name{font-size:10px;font-weight:600;letter-spacing:.4px;color:var(--accent);text-transform:uppercase;margin-top:2px}
 
 /* home cards */
-.ct-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.ct-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:980px){.ct-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.ct-grid{grid-template-columns:1fr}}
 .ct-card{position:relative;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));
   border-radius:14px;padding:26px;cursor:pointer;transition:.18s;overflow:hidden}
@@ -278,6 +280,41 @@ function buildManualCollapses({ od, L, n, colLen, posMode, firstPos }) {
       cursor = start - residualLen - tracaoLen;
     }
   }
+  return out;
+}
+
+// Layout "Engenharia de Produto": cada amostra de colapso é posicionada na SUA
+// própria Posição High Collapse (não em sequência). Mantém o comprimento total
+// (sem corte) deslocando a amostra se ela ultrapassar as bordas, e escolhe o
+// lado (esq/dir) da tensão residual + tração evitando sobreposição.
+function buildProductCollapses({ od, L, colLen, positions }) {
+  const residualLen = roundUpTen(3 * od);
+  const tracaoLen = 380;
+  const occ = [];
+  const overlaps = (a, b) =>
+    occ.some(([x, y]) => Math.min(a, b) < y && Math.max(a, b) > x);
+  const out = [];
+  positions.forEach((posRaw) => {
+    const pos = roundNearestTen(posRaw);
+    let start = pos - colLen / 2;
+    if (colLen > L) start = 0;
+    else if (start < 0) start = 0;
+    else if (start + colLen > L) start = L - colLen;
+    const colStart = start;
+    const colEnd = start + colLen;
+    occ.push([colStart, colEnd]);
+    const rightSpan = [colEnd, colEnd + residualLen + tracaoLen];
+    const leftSpan = [colStart - residualLen - tracaoLen, colStart];
+    const rightOk = rightSpan[1] <= L && !overlaps(rightSpan[0], rightSpan[1]);
+    const leftOk = leftSpan[0] >= 0 && !overlaps(leftSpan[0], leftSpan[1]);
+    let side;
+    if (rightOk && leftOk) side = Math.random() < 0.5 ? "right" : "left";
+    else if (rightOk) side = "right";
+    else if (leftOk) side = "left";
+    else side = L - colEnd >= colStart ? "right" : "left";
+    occ.push(side === "right" ? rightSpan : leftSpan);
+    out.push({ start: colStart, len: colLen, ref: pos, side });
+  });
   return out;
 }
 
@@ -662,6 +699,7 @@ export default function App() {
   const [screen, setScreen] = useState("home"); // home | manual | import | result
   const [sketches, setSketches] = useState([]);
   const [importErr, setImportErr] = useState("");
+  const [importMode, setImportMode] = useState("import"); // "import" | "engenharia"
   const fileRef = useRef(null);
 
   const blank = {
@@ -869,13 +907,24 @@ export default function App() {
           return { posicao, tipo };
         });
 
-        // nº de colapsos = nº de linhas do grupo; a posição High Collapse vale só
-        // para o 1º colapso; os demais entram em sequência.
-        const n = grp.length;
-        const firstPos = roundNearestTen(f.posNum);
-        const collapses = buildManualCollapses({
-          od: f.od, L: f.length, n, colLen, posMode: "fixa", firstPos,
-        }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo }));
+        // nº de colapsos = nº de linhas do grupo.
+        // "import": só o 1º usa a Posição High Collapse; os demais em sequência.
+        // "engenharia": cada colapso usa a SUA própria Posição High Collapse.
+        let collapses;
+        if (importMode === "engenharia") {
+          if (grp.some((r) => typeof r.posNum !== "number")) {
+            skipped += grp.length;
+            return; // nesse modo, todas as linhas precisam da posição
+          }
+          collapses = buildProductCollapses({
+            od: f.od, L: f.length, colLen, positions: grp.map((r) => r.posNum),
+          }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo }));
+        } else {
+          const firstPos = roundNearestTen(f.posNum);
+          collapses = buildManualCollapses({
+            od: f.od, L: f.length, n: grp.length, colLen, posMode: "fixa", firstPos,
+          }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo }));
+        }
 
         parsed.push({
           id: Date.now() + gi,
@@ -932,10 +981,16 @@ export default function App() {
               Escolha como deseja fornecer os dados.
             </p>
             <div className="ct-grid">
-              <div className="ct-card" onClick={() => { setImportErr(""); setScreen("import"); }}>
+              <div className="ct-card" onClick={() => { setImportErr(""); setImportMode("import"); setScreen("import"); }}>
                 <div className="ct-ic"><FileSpreadsheet size={24} /></div>
-                <h3>Importar dados</h3>
+                <h3>Importar dados [Produção]</h3>
                 <p>Envie uma planilha (.xlsx / .xls / .csv). Cada linha gera um croqui em sua própria página A4 paisagem.</p>
+                <span className="ct-tag mono">PLANILHA →</span>
+              </div>
+              <div className="ct-card" onClick={() => { setImportErr(""); setImportMode("engenharia"); setScreen("import"); }}>
+                <div className="ct-ic"><Boxes size={24} /></div>
+                <h3>Importar dados [Engenharia de Produto]</h3>
+                <p>Importa a planilha usando a Posição High Collapse de cada linha. Colapsos do mesmo tubo (IPPN + Ordem) ficam cada um na sua posição.</p>
                 <span className="ct-tag mono">PLANILHA →</span>
               </div>
               <div className="ct-card" onClick={() => { setErr(""); setScreen("manual"); }}>
@@ -1067,6 +1122,14 @@ export default function App() {
               <ArrowLeft size={16} /> Voltar
             </button>
             <div className="ct-panel">
+              <h3 style={{ margin: "0 0 4px", fontSize: 18 }}>
+                {importMode === "engenharia" ? "Engenharia de Produto" : "Importar dados"}
+              </h3>
+              <p style={{ margin: "0 0 18px", fontSize: 13, color: "var(--muted)" }}>
+                {importMode === "engenharia"
+                  ? "Cada colapso é posicionado na sua própria Posição High Collapse."
+                  : "Cada linha gera um croqui; a posição do 1º colapso vem da planilha."}
+              </p>
               <div className="drop" onClick={() => fileRef.current?.click()}>
                 <div className="di"><Upload size={32} /></div>
                 <h4>Selecionar planilha</h4>
@@ -1083,8 +1146,12 @@ export default function App() {
                 <span>
                   Cada linha gera uma página (1 colapso por tubo, vinculado ao <b>IPPN</b>).
                   Linhas com o <b>mesmo IPPN e a mesma Ordem de Produção</b> são agrupadas
-                  num único croqui (vários colapsos no mesmo tubo); nesse caso a
-                  <b> Posição High Collapse</b> vale só para o 1º colapso e os demais entram em sequência.
+                  num único croqui (vários colapsos no mesmo tubo).{" "}
+                  {importMode === "engenharia" ? (
+                    <>Neste modo, <b>cada colapso usa a sua própria Posição High Collapse</b> (todas as linhas do grupo).</>
+                  ) : (
+                    <>Neste modo, a <b>Posição High Collapse</b> vale só para o 1º colapso e os demais entram em sequência.</>
+                  )}{" "}
                   Colunas esperadas: <b>OD</b>, <b>WT</b>, <b>Grau do aço</b>,
                   <b> Comprimento do tubo MES</b>, <b>Pressão Spec (Psi)</b>, <b>Pedido/Item</b>,
                   <b> Ordem de Produção</b>, <b>Posição High Collapse(mm)</b>, <b>Posição</b>,
