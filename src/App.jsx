@@ -319,6 +319,56 @@ function buildProductCollapses({ od, L, colLen, positions }) {
 }
 
 /* ---------------------------------------------------------------- SVG croqui */
+
+// Recalcula os segmentos [colapso],[tensão residual],[tração] de cada colapso
+// de um croqui (mesma geometria usada no desenho), para checar sobreposição.
+function sketchSegments(s) {
+  const L = Math.max(s.length, 1);
+  const residualLen = roundUpTen(3 * s.od);
+  const tracaoLen = 380;
+  const cols =
+    s.collapses && s.collapses.length
+      ? s.collapses
+      : [{ start: null, pos: s.collapsePos, len: s.sampleLength, side: s.side }];
+  return cols.map((c) => {
+    const len = c.len;
+    let start = c.start != null ? c.start : (c.pos != null ? c.pos - len / 2 : 0);
+    if (len <= L) {
+      if (start < 0) start = 0;
+      else if (start + len > L) start = L - len;
+    } else start = 0;
+    const colStart = Math.max(0, start);
+    const colEnd = Math.min(L, start + len);
+    const side = c.side === "left" ? "left" : "right";
+    let resStart, resEnd, traStart, traEnd;
+    if (side === "right") {
+      resStart = colEnd; resEnd = colEnd + residualLen;
+      traStart = resEnd; traEnd = resEnd + tracaoLen;
+    } else {
+      resEnd = colStart; resStart = colStart - residualLen;
+      traEnd = resStart; traStart = resStart - tracaoLen;
+    }
+    return [
+      [colStart, colEnd],
+      [Math.min(resStart, resEnd), Math.max(resStart, resEnd)],
+      [Math.min(traStart, traEnd), Math.max(traStart, traEnd)],
+    ];
+  });
+}
+
+// Há sobreposição quando dois segmentos de colapsos DIFERENTES se cruzam
+// (toques nas bordas não contam).
+function sketchHasOverlap(s) {
+  const segs = sketchSegments(s);
+  const EPS = 0.5;
+  for (let i = 0; i < segs.length; i++)
+    for (let j = i + 1; j < segs.length; j++)
+      for (const a of segs[i])
+        for (const b of segs[j])
+          if (Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > EPS) return true;
+  return false;
+}
+
 function Croqui({ s, index, total }) {
   // viewBox em unidades de desenho
   const VB_W = 1120,
@@ -395,7 +445,12 @@ function Croqui({ s, index, total }) {
     return { i, ref, len, side, posicao, tipo, gMin, gMax, colStart, colEnd,
       resStart, resEnd, traStart, traEnd, overflow };
   });
-  const anyWarn = groups.some((g) => g.overflow);
+  const anyOverflow = groups.some((g) => g.overflow);
+  const anyOverlap = sketchHasOverlap(s);
+  const anyWarn = anyOverflow || anyOverlap;
+  const warnMsg = anyOverlap
+    ? "⚠ amostras sobrepostas — verifique as posições High Collapse"
+    : "⚠ amostras/posição fora dos limites do tubo — representação recortada";
 
   const produto =
     s.produto ||
@@ -589,14 +644,14 @@ function Croqui({ s, index, total }) {
       <line x1={X(L)} y1={bot} x2={X(L)} y2={bot + 138} stroke="#9aa6b8" strokeWidth="0.7" />
       <Dim x1={X(0)} x2={X(L)} y={bot + 124} label={`L = ${fmt(s.length)} mm`} />
 
-      {/* aviso de extrapolação */}
+      {/* aviso de extrapolação / sobreposição */}
       {anyWarn && (
         <g>
-          <rect x="34" y={VB_H - 64} width="450" height="30" rx="5"
+          <rect x="34" y={VB_H - 64} width="540" height="30" rx="5"
             fill="#fdecea" stroke={sig} strokeWidth="1" />
           <text x="48" y={VB_H - 44} fontSize="11.5" fill={sig}
             fontFamily="'IBM Plex Mono',monospace">
-            ⚠ amostras/posição fora dos limites do tubo — representação recortada
+            {warnMsg}
           </text>
         </g>
       )}
@@ -1181,6 +1236,21 @@ export default function App() {
                 </button>
               </div>
             </div>
+            {(() => {
+              const over = sketches.filter(sketchHasOverlap);
+              if (!over.length) return null;
+              return (
+                <div className="note no-print" style={{ marginTop: 0, marginBottom: 18 }}>
+                  <AlertTriangle size={16} />
+                  <span>
+                    <b>{over.length}</b> croqui(s) com <b>amostras sobrepostas</b>
+                    {over.length <= 6 ? ` (IPPN ${over.map((s) => s.ippn).join(", ")})` : ""}.
+                    Revise as posições High Collapse — os conjuntos colapso/tensão residual/tração
+                    estão se cruzando.
+                  </span>
+                </div>
+              );
+            })()}
             {sketches.length === 0 ? (
               <div className="ct-panel">Nenhum croqui gerado ainda.</div>
             ) : (
