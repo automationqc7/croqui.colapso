@@ -10,7 +10,7 @@ import {
   AlertTriangle,
   Trash2,
   FileText,
-  Boxes,
+  Settings,
 } from "lucide-react";
 
 /* =========================================================================
@@ -988,7 +988,7 @@ export default function App() {
                 <span className="ct-tag mono">PLANILHA →</span>
               </div>
               <div className="ct-card" onClick={() => { setImportErr(""); setImportMode("engenharia"); setScreen("import"); }}>
-                <div className="ct-ic"><Boxes size={24} /></div>
+                <div className="ct-ic"><Settings size={24} /></div>
                 <h3>Importar dados [Engenharia de Produto]</h3>
                 <p>Importa a planilha usando a Posição High Collapse de cada linha. Colapsos do mesmo tubo (IPPN + Ordem) ficam cada um na sua posição.</p>
                 <span className="ct-tag mono">PLANILHA →</span>
