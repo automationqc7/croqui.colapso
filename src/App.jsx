@@ -474,24 +474,6 @@ function Croqui({ s, index, total }) {
       height={tubeH} fill={`url(#${pattern})`} stroke={color} strokeWidth="1.4" />
   );
 
-  // rótulo do nome do segmento, acima da amostra (escalonado por nível)
-  const Tag = ({ a, b, color, text, level }) => {
-    const cx = (X(cl(a)) + X(cl(b))) / 2;
-    const ly = top - 6 - level * 24;
-    const tw = text.length * 9.5 + 16;
-    return (
-      <g>
-        <line x1={cx} y1={top} x2={cx} y2={ly} stroke={color} strokeWidth="0.7"
-          strokeDasharray="2 2" />
-        <circle cx={cx} cy={top} r="2" fill={color} />
-        <rect x={cx - tw / 2} y={ly - 17} width={tw} height="22" rx="3"
-          fill="#fff" stroke={color} strokeWidth="0.9" />
-        <text x={cx} y={ly - 2} textAnchor="middle" fontSize="18" fontWeight="600"
-          fontFamily="'IBM Plex Sans',sans-serif" fill={color}>{text}</text>
-      </g>
-    );
-  };
-
   // colchete que agrupa colapso + tensão residual + tração de uma posição
   const PosBracket = ({ a, b, label }) => {
     const x1 = X(cl(a));
@@ -604,22 +586,12 @@ function Croqui({ s, index, total }) {
         return (
           <g key={`sig${g.i}`} fontFamily="'IBM Plex Sans',sans-serif"
             fontWeight="700" textAnchor="middle">
-            <text x={mid(g.colStart, g.colEnd)} y={yIn} fontSize="13" fill={sig}>{cLbl}</text>
-            <text x={mid(g.resStart, g.resEnd)} y={yIn} fontSize="11" fill={sigRes}>{trLbl}</text>
-            <text x={mid(g.traStart, g.traEnd)} y={yIn} fontSize="11" fill={sigTra}>{tLbl}</text>
+            <text x={mid(g.colStart, g.colEnd)} y={yIn} fontSize="15" fill={sig}>{cLbl}</text>
+            <text x={mid(g.resStart, g.resEnd)} y={yIn} fontSize="15" fill={sigRes}>{trLbl}</text>
+            <text x={mid(g.traStart, g.traEnd)} y={yIn} fontSize="15" fill={sigTra}>{tLbl}</text>
           </g>
         );
       })}
-
-      {/* nome do segmento acima de cada amostra (item 8) */}
-      {groups.map((g) => (
-        <g key={`t${g.i}`}>
-          <Tag a={g.colStart} b={g.colEnd} color={sig} level={2}
-            text={groups.length > 1 ? `COLAPSO ${g.i + 1}` : "COLAPSO"} />
-          <Tag a={g.resStart} b={g.resEnd} color={sigRes} level={1} text="TENSÃO RESIDUAL" />
-          <Tag a={g.traStart} b={g.traEnd} color={sigTra} level={0} text="TRAÇÃO" />
-        </g>
-      ))}
 
       {/* colchete por posição (agrupa colapso + tensão residual + tração) */}
       {groups.map((g) => (
@@ -636,8 +608,8 @@ function Croqui({ s, index, total }) {
             <circle cx={gx} cy={cy} r="4.5" fill="none" stroke={sig} strokeWidth="1.4" />
             <line x1={gx - 8} y1={cy} x2={gx + 8} y2={cy} stroke={sig} strokeWidth="1.4" />
             <line x1={gx} y1={cy - 8} x2={gx} y2={cy + 8} stroke={sig} strokeWidth="1.4" />
-            {/* cota do centro do colapso (distância ao ponto zero) */}
-            <text x={gx} y={bot + 60} textAnchor="middle" fontSize="16" fontWeight="600"
+            {/* cota do centro do colapso (distância ao ponto zero), abaixo do círculo */}
+            <text x={gx} y={cy + 26} textAnchor="middle" fontSize="15" fontWeight="700"
               fontFamily="'IBM Plex Mono',monospace" fill={sig}>{fmt(g.ref)}</text>
           </g>
         );
@@ -758,7 +730,8 @@ function Croqui({ s, index, total }) {
                 <g key={i}>
                   <rect x={cSw} y={ry - 12} width="15" height="15"
                     fill={`url(#${r.pat})`} stroke={r.color} strokeWidth="1" />
-                  <text x={cAm} y={ry} fontSize="13" fill={r.color}>{r.name}</text>
+                  <text x={cAm} y={ry} fontSize="12.5" fill={r.color}
+                    fontFamily="'IBM Plex Sans',sans-serif" letterSpacing="-0.3">{r.name}</text>
                   <text x={cTam} y={ry} fontSize="13" fill={ink}>{`${fmt(r.size)}mm`}</text>
                   <text x={cCod} y={ry} fontSize="13" fill={ink}>{r.cod}</text>
                   {groups.map((g, j) => {
