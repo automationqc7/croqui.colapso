@@ -479,7 +479,7 @@ function Croqui({ s, index, total }) {
     const x1 = X(cl(a));
     const x2 = X(cl(b));
     if (x2 - x1 < 2) return null;
-    const yB = top - 86; // linha do colchete
+    const yB = top - 40; // linha do colchete (mais próxima do tubo)
     const drop = 9; // pernas descendo em direção ao tubo
     return (
       <g>
@@ -636,9 +636,9 @@ function Croqui({ s, index, total }) {
           const xx = X(cl(firstStart));
           nodes.push(
             <g key="c0">
-              <line x1={xx} y1={bot} x2={xx} y2={bot + 20} stroke="#5a6a82"
+              <line x1={xx} y1={bot} x2={xx} y2={bot + 44} stroke="#5a6a82"
                 strokeWidth="0.7" strokeDasharray="2 2" />
-              <text x={xx} y={bot + 34} textAnchor="middle" fontSize="18"
+              <text x={xx} y={bot + 58} textAnchor="middle" fontSize="18"
                 fontFamily="'IBM Plex Mono',monospace" fill="#5a6a82">{fmt(firstStart)}</text>
             </g>
           );
