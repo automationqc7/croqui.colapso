@@ -457,6 +457,18 @@ function Croqui({ s, index, total }) {
     `${fmt(s.od)} x ${fmt(s.wt)}${s.grau ? " - " + s.grau : ""}`;
   const colLenVal = (groups[0] && groups[0].len) || 0;
 
+  // numeração sequencial iniciando pela esquerda, por tipo de amostra
+  const nG = groups.length;
+  const rankBy = (vals) => {
+    const order = vals.map((v, i) => ({ i, v })).sort((a, b) => a.v - b.v);
+    const r = new Array(vals.length);
+    order.forEach((o, idx) => (r[o.i] = idx + 1));
+    return r;
+  };
+  const colRank = rankBy(groups.map((g) => (g.colStart + g.colEnd) / 2));
+  const resRank = rankBy(groups.map((g) => (g.resStart + g.resEnd) / 2));
+  const traRank = rankBy(groups.map((g) => (g.traStart + g.traEnd) / 2));
+
   const Band = ({ a, b, color, pattern }) => (
     <rect x={X(cl(a))} y={top} width={Math.max(X(cl(b)) - X(cl(a)), 0)}
       height={tubeH} fill={`url(#${pattern})`} stroke={color} strokeWidth="1.4" />
@@ -582,6 +594,23 @@ function Croqui({ s, index, total }) {
         </g>
       ))}
 
+      {/* sigla (abreviação) dentro da faixa de cada amostra */}
+      {groups.map((g) => {
+        const mid = (a, b) => (X(cl(a)) + X(cl(b))) / 2;
+        const yIn = top + 22;
+        const cLbl = nG > 1 ? `COLAPSO ${colRank[g.i]}` : "COLAPSO";
+        const trLbl = nG > 1 ? `TR ${resRank[g.i]}` : "TR";
+        const tLbl = nG > 1 ? `T ${traRank[g.i]}` : "T";
+        return (
+          <g key={`sig${g.i}`} fontFamily="'IBM Plex Sans',sans-serif"
+            fontWeight="700" textAnchor="middle">
+            <text x={mid(g.colStart, g.colEnd)} y={yIn} fontSize="13" fill={sig}>{cLbl}</text>
+            <text x={mid(g.resStart, g.resEnd)} y={yIn} fontSize="11" fill={sigRes}>{trLbl}</text>
+            <text x={mid(g.traStart, g.traEnd)} y={yIn} fontSize="11" fill={sigTra}>{tLbl}</text>
+          </g>
+        );
+      })}
+
       {/* nome do segmento acima de cada amostra (item 8) */}
       {groups.map((g) => (
         <g key={`t${g.i}`}>
@@ -607,36 +636,50 @@ function Croqui({ s, index, total }) {
             <circle cx={gx} cy={cy} r="4.5" fill="none" stroke={sig} strokeWidth="1.4" />
             <line x1={gx - 8} y1={cy} x2={gx + 8} y2={cy} stroke={sig} strokeWidth="1.4" />
             <line x1={gx} y1={cy - 8} x2={gx} y2={cy + 8} stroke={sig} strokeWidth="1.4" />
+            {/* cota do centro do colapso (distância ao ponto zero) */}
+            <text x={gx} y={bot + 60} textAnchor="middle" fontSize="16" fontWeight="600"
+              fontFamily="'IBM Plex Mono',monospace" fill={sig}>{fmt(g.ref)}</text>
           </g>
         );
       })}
 
-      {/* ---- cotas de posição (ordinal): início de cada amostra a partir do zero ---- */}
+      {/* ---- cotas: 1ª = distância do zero; demais = tamanho da amostra ---- */}
       <text x="44" y={bot + 34} fontSize="16" fontWeight="700" fontFamily="'IBM Plex Sans',sans-serif"
         fill="#5a6a82">LADO PÉ</text>
       <line x1={X(0)} y1={bot} x2={X(0)} y2={bot + 22} stroke="#5a6a82" strokeWidth="0.9" />
       <text x={X(0)} y={bot + 34} textAnchor="middle" fontSize="19"
         fontFamily="'IBM Plex Mono',monospace" fill="#5a6a82">0</text>
       {(() => {
-        const starts = [];
+        const segs = [];
         groups.forEach((g) => {
-          starts.push({ x: g.colStart, c: sig });
-          starts.push({ x: g.resStart, c: sigRes });
-          starts.push({ x: g.traStart, c: sigTra });
+          segs.push({ a: g.colStart, b: g.colEnd, size: g.len, c: sig });
+          segs.push({ a: g.resStart, b: g.resEnd, size: residualLen, c: sigRes });
+          segs.push({ a: g.traStart, b: g.traEnd, size: tracaoLen, c: sigTra });
         });
-        starts.sort((a, b) => a.x - b.x);
-        return starts.map((p, i) => {
-          const xx = X(cl(p.x));
-          const ly = bot + 34 + (i % 2) * 32;
-          return (
-            <g key={`o${i}`}>
-              <line x1={xx} y1={bot} x2={xx} y2={ly - 15} stroke={p.c}
+        segs.sort((p, q) => p.a - q.a);
+        const firstStart = segs.length ? Math.max(0, segs[0].a) : 0;
+        const nodes = [];
+        // 1ª cota: distância do lado pé (zero) ao início da 1ª amostra
+        if (firstStart > 1) {
+          const xx = X(cl(firstStart));
+          nodes.push(
+            <g key="c0">
+              <line x1={xx} y1={bot} x2={xx} y2={bot + 20} stroke="#5a6a82"
                 strokeWidth="0.7" strokeDasharray="2 2" />
-              <text x={xx} y={ly} textAnchor="middle" fontSize="18"
-                fontFamily="'IBM Plex Mono',monospace" fill={p.c}>{fmt(Math.max(0, p.x))}</text>
+              <text x={xx} y={bot + 34} textAnchor="middle" fontSize="18"
+                fontFamily="'IBM Plex Mono',monospace" fill="#5a6a82">{fmt(firstStart)}</text>
             </g>
           );
+        }
+        // demais: tamanho de cada amostra, centralizado no segmento
+        segs.forEach((sg, i) => {
+          const cx = (X(cl(sg.a)) + X(cl(sg.b))) / 2;
+          nodes.push(
+            <text key={`sz${i}`} x={cx} y={bot + 34} textAnchor="middle" fontSize="15"
+              fontFamily="'IBM Plex Mono',monospace" fill={sg.c}>{fmt(sg.size)}</text>
+          );
         });
+        return nodes;
       })()}
 
       {/* cota de comprimento total */}
@@ -662,8 +705,8 @@ function Croqui({ s, index, total }) {
         const Ng = groups.length || 1;
         const rowsMeta = [
           { name: "COLAPSO", color: sig, pat: "hatch", size: colLenVal, cod: "AM_COLPS", tipoOf: (g) => (g ? g.tipo : INT) || INT },
-          { name: "TENSÃO RESIDUAL", color: sigRes, pat: "hatchRes", size: residualLen, cod: "AM_TENSA", tipoOf: () => INT },
-          { name: "TRAÇÃO", color: sigTra, pat: "hatchTra", size: tracaoLen, cod: "AM_TRACC", tipoOf: () => INT },
+          { name: "TENSÃO RESIDUAL [TR]", color: sigRes, pat: "hatchRes", size: residualLen, cod: "AM_TENSA", tipoOf: () => INT },
+          { name: "TRAÇÃO [T]", color: sigTra, pat: "hatchTra", size: tracaoLen, cod: "AM_TRACC", tipoOf: () => INT },
         ];
         const bx = 34, by = VB_H - 214;
         const cSw = bx + 12, cAm = bx + 36, cTam = bx + 190, cCod = bx + 290;
@@ -696,7 +739,7 @@ function Croqui({ s, index, total }) {
               return (
                 <g key={`gh${j}`}>
                   {j > 0 && (
-                    <line x1={gx} y1={by + 30} x2={gx} y2={by + 142} stroke="#e3e8ef" strokeWidth="1" />
+                    <line x1={gx} y1={by + 50} x2={gx} y2={by + 142} stroke="#e3e8ef" strokeWidth="1" />
                   )}
                   <text x={gx + 8} y={headY} fontSize="13.5" fontWeight="700" fill="#3a4a63"
                     fontFamily="'IBM Plex Sans',sans-serif">{String(g.posicao).toUpperCase()}</text>
