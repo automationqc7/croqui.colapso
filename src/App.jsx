@@ -442,7 +442,8 @@ function Croqui({ s, index, total }) {
     const gMax = Math.min(L, Math.max(colEnd, resEnd, traEnd));
     const posicao = c.posicao || s.posicao || "—";
     const tipo = c.tipo || s.tipoColapso || "INTERNO (sem acompanhamento)";
-    return { i, ref, len, side, posicao, tipo, gMin, gMax, colStart, colEnd,
+    const amostragem = c.amostragem || null;
+    return { i, ref, len, side, posicao, tipo, amostragem, gMin, gMax, colStart, colEnd,
       resStart, resEnd, traStart, traEnd, overflow };
   });
   const anyOverflow = groups.some((g) => g.overflow);
@@ -474,13 +475,36 @@ function Croqui({ s, index, total }) {
       height={tubeH} fill={`url(#${pattern})`} stroke={color} strokeWidth="1.4" />
   );
 
+  // balão de tipo de amostragem (Crítica / Aleatória) sobre cada colapso
+  const AMOST = {
+    "Amostra Crítica": { label: "CRÍTICA", color: "#8e24aa" }, // roxo: chama atenção e distinto do colapso
+    "Amostra Aleatória": { label: "ALEATÓRIA", color: "#1e6fe0" }, // azul
+  };
+  const AmostBadge = ({ cx, amostragem }) => {
+    const cfg = AMOST[amostragem];
+    if (!cfg) return null;
+    const w = cfg.label.length * 8.2 + 22;
+    const yTop = top - 40;
+    const h = 19;
+    return (
+      <g>
+        <rect x={cx - w / 2} y={yTop} width={w} height={h} rx={h / 2}
+          fill="#fff" stroke={cfg.color} strokeWidth="1.4" />
+        <text x={cx} y={yTop + 13.5} textAnchor="middle" fontSize="12" fontWeight="700"
+          fontFamily="'IBM Plex Sans',sans-serif" fill={cfg.color}>{cfg.label}</text>
+        <path d={`M ${cx - 5} ${yTop + h} L ${cx + 5} ${yTop + h} L ${cx} ${yTop + h + 7} Z`}
+          fill={cfg.color} />
+      </g>
+    );
+  };
+
   // colchete que agrupa colapso + tensão residual + tração de uma posição
   const PosBracket = ({ a, b, label }) => {
     const x1 = X(cl(a));
     const x2 = X(cl(b));
     if (x2 - x1 < 2) return null;
-    const yB = top - 40; // linha do colchete (mais próxima do tubo)
-    const drop = 9; // pernas descendo em direção ao tubo
+    const yB = top - 52; // linha do colchete (deixa espaço p/ o balão de amostragem)
+    const drop = 8; // pernas descendo em direção ao tubo
     return (
       <g>
         <path
@@ -598,6 +622,12 @@ function Croqui({ s, index, total }) {
         <PosBracket key={`pb${g.i}`} a={g.gMin} b={g.gMax} label={`Posição ${g.posicao}`} />
       ))}
 
+      {/* balão de tipo de amostragem (Crítica / Aleatória) sobre cada colapso */}
+      {groups.map((g) => (
+        <AmostBadge key={`am${g.i}`}
+          cx={(X(cl(g.colStart)) + X(cl(g.colEnd))) / 2} amostragem={g.amostragem} />
+      ))}
+
       {/* linha de centro por colapso */}
       {groups.map((g) => {
         const gx = X(cl(g.ref));
@@ -654,7 +684,29 @@ function Croqui({ s, index, total }) {
         return nodes;
       })()}
 
-      {/* cota de comprimento total */}
+      {/* cotas extras (Engenharia de Produto): do zero ao início de cada grupo
+          que tem vão em relação ao grupo anterior (amostras não sequenciais) */}
+      {s.engenharia && (() => {
+        const gs = groups
+          .map((g) => ({ min: g.gMin, max: g.gMax }))
+          .sort((a, b) => a.min - b.min);
+        const EPS = 1;
+        const nodes = [];
+        for (let i = 1; i < gs.length; i++) {
+          if (gs[i].min - gs[i - 1].max > EPS) {
+            const xx = X(cl(gs[i].min));
+            nodes.push(
+              <g key={`gap${i}`}>
+                <line x1={xx} y1={bot} x2={xx} y2={bot + 44} stroke="#5a6a82"
+                  strokeWidth="0.7" strokeDasharray="2 2" />
+                <text x={xx} y={bot + 58} textAnchor="middle" fontSize="18"
+                  fontFamily="'IBM Plex Mono',monospace" fill="#5a6a82">{fmt(gs[i].min)}</text>
+              </g>
+            );
+          }
+        }
+        return nodes;
+      })()}
       <line x1={X(0)} y1={bot + 92} x2={X(0)} y2={bot + 138} stroke="#9aa6b8" strokeWidth="0.7" />
       <line x1={X(L)} y1={bot} x2={X(L)} y2={bot + 138} stroke="#9aa6b8" strokeWidth="0.7" />
       <Dim x1={X(0)} x2={X(L)} y={bot + 124} label={`L = ${fmt(s.length)} mm`} />
@@ -785,9 +837,10 @@ export default function App() {
     posMode: "fixa", // fixa | aleatoria
     firstPos: "",
     ippn: "",
-    // posição (Pé|Meio|Ponta) e tipo-amostra por amostra de colapso
-    positions: ["Meio"],
-    tipos: ["EXTERNO (com acompanhamento TPI)"],
+    // posição (Pé|Meio|Ponta), tipo-amostra e tipo de amostragem por amostra de colapso
+    positions: [""],
+    tipos: [""],
+    amostragens: [""],
   };
   const [form, setForm] = useState(blank);
   const [err, setErr] = useState("");
@@ -814,8 +867,9 @@ export default function App() {
       return {
         ...f,
         count: digits,
-        positions: grow(f.positions, "Meio"),
-        tipos: grow(f.tipos, "EXTERNO (com acompanhamento TPI)"),
+        positions: grow(f.positions, ""),
+        tipos: grow(f.tipos, ""),
+        amostragens: grow(f.amostragens, ""),
       };
     });
   };
@@ -855,19 +909,30 @@ export default function App() {
         return;
       }
     }
+    // dropdowns por colapso são obrigatórios (Posição, Tipo-amostra, Tipo de amostragem)
+    const positions = (form.positions || []).slice(0, n);
+    const tipos = (form.tipos || []).slice(0, n);
+    const amostragens = (form.amostragens || []).slice(0, n);
+    while (positions.length < n) positions.push("");
+    while (tipos.length < n) tipos.push("");
+    while (amostragens.length < n) amostragens.push("");
+    if (
+      positions.some((v) => !v) ||
+      tipos.some((v) => !v) ||
+      amostragens.some((v) => !v)
+    ) {
+      setErr("Selecione Posição, Tipo-amostra e Tipo de amostragem de cada amostra de colapso.");
+      return;
+    }
     setErr("");
     const collapses = buildManualCollapses({
       od, L: length, n, colLen, posMode: form.posMode, firstPos,
     });
-    // posição (Pé/Meio/Ponta) e tipo-amostra por colapso
-    const positions = (form.positions || []).slice(0, n);
-    const tipos = (form.tipos || []).slice(0, n);
-    while (positions.length < n) positions.push("Meio");
-    while (tipos.length < n) tipos.push("EXTERNO (com acompanhamento TPI)");
     const collapsesMeta = collapses.map((c, k) => ({
       ...c,
       posicao: positions[k],
       tipo: tipos[k],
+      amostragem: amostragens[k],
     }));
     const produto = `${fmt(od)} x ${fmt(wt)} - ${form.grau.trim()}`;
     const sk = {
@@ -905,6 +970,14 @@ export default function App() {
     return k !== undefined && String(nrow[k]).trim() !== "" ? String(nrow[k]).trim() : "";
   };
 
+  // "Tipo de amostragem" -> "Amostra Crítica" | "Amostra Aleatória" | null (inválido)
+  const classifyAmostragem = (raw) => {
+    const t = norm(raw);
+    if (t.includes("critic")) return "Amostra Crítica";
+    if (t.includes("aleat")) return "Amostra Aleatória";
+    return null;
+  };
+
   const handleFile = async (file) => {
     if (!file) return;
     setImportErr("");
@@ -932,6 +1005,7 @@ export default function App() {
           posNum: colNum(nrow, (h) => h.includes("high")),
           posTxtRaw: colTxt(nrow, (h) => h === "posicao"),
           tipoRaw: colTxt(nrow, (h) => h.includes("tipo-amostra") || h.includes("tipo amostra")),
+          amostragemRaw: colTxt(nrow, (h) => h.includes("amostragem")),
           ippn: colTxt(nrow, (h) => h.includes("ippn")),
         };
       });
@@ -952,6 +1026,7 @@ export default function App() {
       // 3 - monta um croqui por grupo
       const parsed = [];
       let skipped = 0;
+      const amostrErr = []; // tubos com "Tipo de amostragem" ausente/ inválido
       orderKeys.forEach((key, gi) => {
         const grp = groupsMap.get(key);
         const f = grp[0]; // a 1ª linha define o tubo e a posição do 1º colapso
@@ -968,15 +1043,22 @@ export default function App() {
           return; // OD/pressão fora dos critérios de tamanho
         }
 
-        // posição (Pé/Meio/Ponta) e tipo-amostra de cada colapso (uma por linha do grupo)
+        // posição (Pé/Meio/Ponta), tipo-amostra e tipo de amostragem por colapso
         const metas = grp.map((r) => {
           const pt = norm(r.posTxtRaw);
           const posicao = pt.startsWith("pe") ? "Pé" : pt.startsWith("pont") ? "Ponta" : "Meio";
           const tipo = norm(r.tipoRaw).includes("externo")
             ? "EXTERNO (com acompanhamento TPI)"
             : "INTERNO (sem acompanhamento)";
-          return { posicao, tipo };
+          const amostragem = classifyAmostragem(r.amostragemRaw);
+          return { posicao, tipo, amostragem };
         });
+
+        // "Tipo de amostragem" é obrigatório e deve ser Crítica/Aleatória
+        if (metas.some((m) => m.amostragem === null)) {
+          amostrErr.push(f.ippn || `linha ${gi + 1}`);
+          return; // não gera esse croqui
+        }
 
         // nº de colapsos = nº de linhas do grupo.
         // "import": só o 1º usa a Posição High Collapse; os demais em sequência.
@@ -989,12 +1071,12 @@ export default function App() {
           }
           collapses = buildProductCollapses({
             od: f.od, L: f.length, colLen, positions: grp.map((r) => r.posNum),
-          }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo }));
+          }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo, amostragem: metas[k].amostragem }));
         } else {
           const firstPos = roundNearestTen(f.posNum);
           collapses = buildManualCollapses({
             od: f.od, L: f.length, n: grp.length, colLen, posMode: "fixa", firstPos,
-          }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo }));
+          }).map((c, k) => ({ ...c, posicao: metas[k].posicao, tipo: metas[k].tipo, amostragem: metas[k].amostragem }));
         }
 
         parsed.push({
@@ -1006,9 +1088,21 @@ export default function App() {
           posicao: metas[0].posicao,
           tipoColapso: metas[0].tipo,
           ippn: f.ippn || `Linha ${gi + 1}`,
+          engenharia: importMode === "engenharia",
           collapses,
         });
       });
+
+      // "Tipo de amostragem" inválido/ausente -> não gera e informa o motivo
+      if (amostrErr.length) {
+        setImportErr(
+          `Coluna "Tipo de amostragem" ausente ou com valor inválido em ${amostrErr.length} tubo(s) — ` +
+          `esperado "Amostra Crítica" ou "Amostra Aleatória". ` +
+          `IPPN: ${amostrErr.slice(0, 8).join(", ")}${amostrErr.length > 8 ? "…" : ""}. ` +
+          `Corrija a planilha — nenhum croqui foi gerado.`
+        );
+        return;
+      }
       if (!parsed.length) {
         setImportErr(
           "Nenhuma linha válida. Confira as colunas: OD, WT, Comprimento do tubo MES, Pressão Spec (Psi), Posição High Collapse(mm), Posição, IPPN, Tipo-amostra."
@@ -1135,11 +1229,11 @@ export default function App() {
                   onChange={(v) => setForm({ ...form, ippn: v })} />
               </div>
 
-              {/* Posição (Pé/Meio/Ponta) e Tipo-amostra por amostra de colapso */}
+              {/* Posição, Tipo-amostra e Tipo de amostragem por amostra de colapso */}
               <div className="pos-block" style={{ gridTemplateColumns: "1fr" }}>
                 <label style={{ fontSize: 12, color: "var(--muted)", letterSpacing: ".4px",
                   textTransform: "uppercase", fontWeight: 500 }}>
-                  Posição e tipo-amostra por colapso
+                  Posição, tipo-amostra e tipo de amostragem por colapso
                 </label>
               </div>
               {Array.from({ length: nCount }).map((_, k) => (
@@ -1147,7 +1241,7 @@ export default function App() {
                   <Field
                     label={nCount > 1 ? `Posição — colapso ${k + 1}` : "Posição"}
                     options={["Pé", "Meio", "Ponta"]}
-                    value={(form.positions && form.positions[k]) || "Meio"}
+                    value={(form.positions && form.positions[k]) || ""}
                     onChange={(v) =>
                       setForm((f) => {
                         const a = (f.positions || []).slice();
@@ -1161,12 +1255,23 @@ export default function App() {
                       "EXTERNO (com acompanhamento TPI)",
                       "INTERNO (sem acompanhamento)",
                     ]}
-                    value={(form.tipos && form.tipos[k]) || "EXTERNO (com acompanhamento TPI)"}
+                    value={(form.tipos && form.tipos[k]) || ""}
                     onChange={(v) =>
                       setForm((f) => {
                         const a = (f.tipos || []).slice();
                         a[k] = v;
                         return { ...f, tipos: a };
+                      })
+                    } />
+                  <Field
+                    label={nCount > 1 ? `Tipo de amostragem — colapso ${k + 1}` : "Tipo de amostragem"}
+                    options={["Amostra Crítica", "Amostra Aleatória"]}
+                    value={(form.amostragens && form.amostragens[k]) || ""}
+                    onChange={(v) =>
+                      setForm((f) => {
+                        const a = (f.amostragens || []).slice();
+                        a[k] = v;
+                        return { ...f, amostragens: a };
                       })
                     } />
                 </div>
@@ -1300,6 +1405,7 @@ function Field({ label, unit, hint, value, onChange, text, options }) {
       </label>
       {options ? (
         <select className="inp" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="" disabled>Selecione…</option>
           {options.map((o) => (
             <option key={o} value={o}>{o}</option>
           ))}
