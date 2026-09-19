@@ -478,7 +478,7 @@ function Croqui({ s, index, total }) {
   // balão de tipo de amostragem (Crítica / Aleatória) sobre cada colapso
   const AMOST = {
     "Amostra Crítica": { label: "CRÍTICA", color: "#8e24aa" }, // roxo: chama atenção e distinto do colapso
-    "Amostra Aleatória": { label: "ALEATÓRIA", color: "#1e6fe0" }, // azul
+    "Amostra Aleatória": { label: "ALEATÓRIA", color: "#5e6b82" }, // cinza
   };
   const AmostBadge = ({ cx, amostragem }) => {
     const cfg = AMOST[amostragem];
